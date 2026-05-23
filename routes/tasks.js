@@ -21,13 +21,12 @@ const storage = new CloudinaryStorage({
   params: {
     folder: 'taskflow_attachments',
     allowed_formats: ['jpg', 'png', 'jpeg', 'pdf'],
-    resource_type: 'auto' // NEW: Tells Cloudinary to handle PDFs correctly!
+    resource_type: 'auto' 
   },
 });
 const upload = multer({ storage: storage });
 
 // @route   POST /api/tasks
-// @desc    Create a task inside a project
 router.post('/', auth, async (req, res) => {
   try {
     const { title, description, priority, projectId, assignedTo } = req.body;
@@ -39,6 +38,7 @@ router.post('/', auth, async (req, res) => {
       project: projectId,
       assignedTo: assignedTo || null,
       createdBy: req.user.id,
+      attachments: [] // Initialize empty array
     });
 
     const task = await newTask.save();
@@ -47,7 +47,6 @@ router.post('/', auth, async (req, res) => {
 });
 
 // @route   GET /api/tasks/:projectId
-// @desc    Get all tasks belonging to a specific project
 router.get('/:projectId', auth, async (req, res) => {
   try {
     const tasks = await Task.find({ project: req.params.projectId }).sort({ createdAt: -1 });
@@ -56,7 +55,6 @@ router.get('/:projectId', auth, async (req, res) => {
 });
 
 // @route   PUT /api/tasks/:taskId
-// @desc    Modify a task's status or detailed attributes
 router.put('/:taskId', auth, async (req, res) => {
   try {
     const { title, description, status, priority, assignedTo } = req.body;
@@ -87,26 +85,31 @@ router.put('/:taskId', auth, async (req, res) => {
 });
 
 // @route   POST /api/tasks/:taskId/upload
-// @desc    Upload an attachment to a specific task
-router.post('/:taskId/upload', auth, upload.single('attachment'), async (req, res) => {
+// @desc    Upload multiple attachments to a specific task
+router.post('/:taskId/upload', auth, upload.array('attachments', 10), async (req, res) => {
   try {
     let task = await Task.findById(req.params.taskId);
     if (!task) return res.status(404).json({ message: 'Task not found' });
 
-    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: 'No files uploaded' });
+    }
 
-    // Save the Cloudinary URL to the task
-    task.attachmentUrl = req.file.path;
+    // Extract all new Cloudinary URLs from the uploaded files
+    const newAttachmentUrls = req.files.map(file => file.path);
+
+    // Append to existing attachments array
+    task.attachments = [...(task.attachments || []), ...newAttachmentUrls];
     await task.save();
 
-    // Trigger real-time update for everyone viewing the board
+    // Trigger real-time update
     const io = req.app.get('io');
     if (io) io.to(task.project.toString()).emit('task_changed');
 
     res.json(task);
   } catch (err) { 
     console.error(err);
-    res.status(500).send('Server Error uploading file'); 
+    res.status(500).send('Server Error uploading files'); 
   }
 });
 
