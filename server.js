@@ -19,7 +19,7 @@ mongoose.connect(process.env.MONGO_URI)
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/workspaces', require('./routes/workspaces'));
 app.use('/api/projects', require('./routes/projects'));
-app.use('/api/tasks', require('./routes/tasks'));
+app.use('/api/tasks', require('./routes/tasks')); // Module 4: Tasks
 
 // Health Check Route
 app.get('/api/health', (req, res) => {
@@ -32,5 +32,5 @@ app.get('/api/health', (req, res) => {
 
 // Start Server
 app.listen(PORT, () => {
-  console.log Img server execution confirmation on port ${PORT};
+  console.log(`Server is running on port ${PORT}`);
 });
