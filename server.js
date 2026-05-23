@@ -47,7 +47,8 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/workspaces', require('./routes/workspaces'));
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/tasks', require('./routes/tasks'));
-app.use('/api/analytics', require('./routes/analytics')); // NEW MODULE 7 ROUTE
+app.use('/api/analytics', require('./routes/analytics')); 
+app.use('/api/notifications', require('./routes/notifications')); // ADDED: MODULE 8 ROUTE
 
 // Health Check Route
 app.get('/api/health', (req, res) => {
