@@ -19,7 +19,9 @@ router.post('/enhance-task', auth, async (req, res) => {
 
     // Initialize the Gemini API
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    
+    // UPDATED: Using the high-speed, app-optimized 2.5 Flash model
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     // The Prompt Engineering Instruction
     const prompt = `
