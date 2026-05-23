@@ -8,12 +8,26 @@ const Project = require('../models/Project');
 const Task = require('../models/Task');
 
 // @route   GET /api/admin/stats
+// @desc    Get platform-wide statistics
 router.get('/stats', auth, admin, async (req, res) => {
   try {
     const userCount = await User.countDocuments();
     const workspaceCount = await Workspace.countDocuments();
     res.json({ totalUsers: userCount, totalWorkspaces: workspaceCount });
-  } catch (err) { res.status(500).send('Server Error'); }
+  } catch (err) { 
+    res.status(500).send('Server Error'); 
+  }
+});
+
+// @route   GET /api/admin/users
+// @desc    Get all registered users
+router.get('/users', auth, admin, async (req, res) => {
+  try {
+    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    res.json(users);
+  } catch (err) { 
+    res.status(500).send('Server Error'); 
+  }
 });
 
 // @route   PUT /api/admin/users/:id/role
@@ -54,7 +68,9 @@ router.delete('/users/:id', auth, admin, async (req, res) => {
     }
     await User.findByIdAndDelete(req.params.id);
     res.json({ message: 'User terminated' });
-  } catch (err) { res.status(500).send('Server Error'); }
+  } catch (err) { 
+    res.status(500).send('Server Error'); 
+  }
 });
 
 // @route   GET /api/admin/workspaces
@@ -63,7 +79,9 @@ router.get('/workspaces', auth, admin, async (req, res) => {
   try {
     const workspaces = await Workspace.find().sort({ createdAt: -1 });
     res.json(workspaces);
-  } catch (err) { res.status(500).send('Server Error'); }
+  } catch (err) { 
+    res.status(500).send('Server Error'); 
+  }
 });
 
 // @route   DELETE /api/admin/workspaces/:id
@@ -82,7 +100,9 @@ router.delete('/workspaces/:id', auth, admin, async (req, res) => {
     await Workspace.findByIdAndDelete(workspaceId);
 
     res.json({ message: 'Workspace and all associated data permanently deleted.' });
-  } catch (err) { res.status(500).send('Server Error'); }
+  } catch (err) { 
+    res.status(500).send('Server Error'); 
+  }
 });
 
 module.exports = router;
