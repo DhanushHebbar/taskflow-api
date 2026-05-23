@@ -15,15 +15,17 @@ router.post('/', auth, async (req, res) => {
     const workspace = await Workspace.findById(workspaceId);
     if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
 
-    // CRITICAL FIX: Added safety checks (m.user &&) to prevent 500 crashes
     const member = workspace.members.find(m => m.user && m.user.toString() === req.user.id);
     if (!member) return res.status(401).json({ message: 'Unauthorized access to workspace' });
     
-    // Feature: Viewers cannot create projects
     if (member.role === 'viewer') return res.status(403).json({ message: 'Viewers cannot create projects.' });
 
     const newProject = new Project({
-      name, description, workspace: workspaceId, createdBy: req.user.id
+      name, 
+      description, 
+      workspace: workspaceId, 
+      owner: req.user.id,      // FIX: Explicitly pass the 'owner' field
+      createdBy: req.user.id   // Keep for backwards compatibility
     });
 
     const project = await newProject.save();
@@ -41,7 +43,6 @@ router.get('/:workspaceId', auth, async (req, res) => {
     const workspace = await Workspace.findById(req.params.workspaceId);
     if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
 
-    // CRITICAL FIX: Added safety checks (m.user &&)
     const isMember = workspace.members.some(m => m.user && m.user.toString() === req.user.id);
     if (!isMember) return res.status(401).json({ message: 'Unauthorized access to workspace' });
 
