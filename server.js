@@ -12,6 +12,7 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
 app.use(express.json());
+app.use('/api/admin', require('./routes/admin')); 
 
 // Socket.io Configuration
 const io = new Server(server, {
