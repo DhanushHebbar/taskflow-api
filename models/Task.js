@@ -33,8 +33,11 @@ const TaskSchema = new mongoose.Schema({
     required: true,
   },
   attachmentUrl: {
-    type: String, // NEW: Stores the Cloudinary file link
+    type: String, // Kept for backwards compatibility with your older test tasks
   },
+  attachments: [{
+    type: String, // NEW: Stores an array of Cloudinary file links
+  }],
   createdAt: {
     type: Date,
     default: Date.now,
