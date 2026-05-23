@@ -16,6 +16,10 @@ const WorkspaceSchema = new mongoose.Schema({
       ref: 'User',
     }
   ],
+  joinCode: {
+    type: String,
+    unique: true,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
