@@ -57,6 +57,7 @@ app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/ai', require('./routes/ai'));
 app.use('/api/activity', require('./routes/activity'));
+app.use('/api/users', require('./routes/users')); 
 
 
 // Health Check Route
