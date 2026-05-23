@@ -17,6 +17,7 @@ mongoose.connect(process.env.MONGO_URI)
 
 // Define Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/workspaces', require('./routes/workspaces'));
 
 // Health Check Route
 app.get('/api/health', (req, res) => {
@@ -31,3 +32,4 @@ app.get('/api/health', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+
