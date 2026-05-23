@@ -20,7 +20,8 @@ const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: 'taskflow_attachments',
-    allowed_formats: ['jpg', 'png', 'jpeg', 'pdf']
+    allowed_formats: ['jpg', 'png', 'jpeg', 'pdf'],
+    resource_type: 'auto' // NEW: Tells Cloudinary to handle PDFs correctly!
   },
 });
 const upload = multer({ storage: storage });
