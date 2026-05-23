@@ -9,11 +9,14 @@ const Workspace = require('../models/Workspace');
 router.post('/', auth, async (req, res) => {
   try {
     const { name, description, workspaceId } = req.body;
+    
+    if (!workspaceId) return res.status(400).json({ message: 'Workspace ID is missing' });
+
     const workspace = await Workspace.findById(workspaceId);
     if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
 
-    // UPGRADED RBAC SECURITY CHECK
-    const member = workspace.members.find(m => m.user.toString() === req.user.id);
+    // CRITICAL FIX: Added safety checks (m.user &&) to prevent 500 crashes
+    const member = workspace.members.find(m => m.user && m.user.toString() === req.user.id);
     if (!member) return res.status(401).json({ message: 'Unauthorized access to workspace' });
     
     // Feature: Viewers cannot create projects
@@ -25,7 +28,10 @@ router.post('/', auth, async (req, res) => {
 
     const project = await newProject.save();
     res.json(project);
-  } catch (err) { res.status(500).send('Server Error'); }
+  } catch (err) { 
+    console.error("POST Project Error:", err.message);
+    res.status(500).json({ message: 'Server Error', error: err.message }); 
+  }
 });
 
 // @route   GET /api/projects/:workspaceId
@@ -35,13 +41,16 @@ router.get('/:workspaceId', auth, async (req, res) => {
     const workspace = await Workspace.findById(req.params.workspaceId);
     if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
 
-    // UPGRADED SECURITY CHECK
-    const isMember = workspace.members.some(m => m.user.toString() === req.user.id);
+    // CRITICAL FIX: Added safety checks (m.user &&)
+    const isMember = workspace.members.some(m => m.user && m.user.toString() === req.user.id);
     if (!isMember) return res.status(401).json({ message: 'Unauthorized access to workspace' });
 
     const projects = await Project.find({ workspace: req.params.workspaceId }).sort({ createdAt: -1 });
     res.json(projects);
-  } catch (err) { res.status(500).send('Server Error'); }
+  } catch (err) { 
+    console.error("GET Projects Error:", err.message);
+    res.status(500).send('Server Error'); 
+  }
 });
 
 module.exports = router;
