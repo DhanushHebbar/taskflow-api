@@ -21,20 +21,24 @@ const io = new Server(server, {
   }
 });
 
+// Make 'io' accessible to our Express routes
+app.set('io', io);
+
 io.on('connection', (socket) => {
-  // When a user opens a project board, they join a specific "room"
+  // Project-specific real-time updates
   socket.on('join_project', (projectId) => {
     socket.join(projectId);
   });
-
-  // When a user moves or creates a task, broadcast to others in the same room
   socket.on('task_changed', (projectId) => {
     socket.to(projectId).emit('task_changed');
   });
 
-  socket.on('disconnect', () => {
-    // Socket.io automatically handles room leave on disconnect
+  // NEW: User-specific real-time notifications
+  socket.on('join_user', (userId) => {
+    socket.join(userId);
   });
+
+  socket.on('disconnect', () => {});
 });
 
 // Database Connection
@@ -48,7 +52,7 @@ app.use('/api/workspaces', require('./routes/workspaces'));
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api/analytics', require('./routes/analytics')); 
-app.use('/api/notifications', require('./routes/notifications')); // ADDED: MODULE 8 ROUTE
+app.use('/api/notifications', require('./routes/notifications'));
 
 // Health Check Route
 app.get('/api/health', (req, res) => {
@@ -59,7 +63,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Start Server (Crucial: Use 'server.listen', not 'app.listen')
+// Start Server
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
