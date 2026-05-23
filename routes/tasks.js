@@ -3,7 +3,7 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const Task = require('../models/Task');
 const Project = require('../models/Project');
-const Notification = require('../models/Notification'); // ADDED
+const Notification = require('../models/Notification');
 
 // @route   POST /api/tasks
 // @desc    Create a task inside a project
@@ -57,13 +57,17 @@ router.put('/:taskId', auth, async (req, res) => {
 
     // Check if status actually changed to trigger a notification
     if (status && task.status !== status) {
-      // Create a notification for the task creator if someone else moves it
       if (task.createdBy.toString() !== req.user.id) {
+        // 1. Save to database
         const newNotification = new Notification({
           user: task.createdBy,
           message: `Your task "${task.title}" was moved to ${status}.`
         });
         await newNotification.save();
+
+        // 2. NEW: Emit real-time live event to the specific user's private room
+        const io = req.app.get('io');
+        io.to(task.createdBy.toString()).emit('new_notification', newNotification);
       }
     }
 
