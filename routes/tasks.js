@@ -4,21 +4,37 @@ const auth = require('../middleware/auth');
 const Task = require('../models/Task');
 const Project = require('../models/Project');
 const Notification = require('../models/Notification');
+const multer = require('multer');
+const { v2: cloudinary } = require('cloudinary');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// Configure Multer Storage
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'taskflow_attachments',
+    allowed_formats: ['jpg', 'png', 'jpeg', 'pdf']
+  },
+});
+const upload = multer({ storage: storage });
 
 // @route   POST /api/tasks
 // @desc    Create a task inside a project
-// @access  Private
 router.post('/', auth, async (req, res) => {
   try {
     const { title, description, priority, projectId, assignedTo } = req.body;
-
     const project = await Project.findById(projectId);
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
     const newTask = new Task({
-      title,
-      description,
-      priority,
+      title, description, priority,
       project: projectId,
       assignedTo: assignedTo || null,
       createdBy: req.user.id,
@@ -26,48 +42,35 @@ router.post('/', auth, async (req, res) => {
 
     const task = await newTask.save();
     res.json(task);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server Error');
-  }
+  } catch (err) { res.status(500).send('Server Error'); }
 });
 
 // @route   GET /api/tasks/:projectId
 // @desc    Get all tasks belonging to a specific project
-// @access  Private
 router.get('/:projectId', auth, async (req, res) => {
   try {
     const tasks = await Task.find({ project: req.params.projectId }).sort({ createdAt: -1 });
     res.json(tasks);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server Error');
-  }
+  } catch (err) { res.status(500).send('Server Error'); }
 });
 
 // @route   PUT /api/tasks/:taskId
 // @desc    Modify a task's status or detailed attributes
-// @access  Private
 router.put('/:taskId', auth, async (req, res) => {
   try {
     const { title, description, status, priority, assignedTo } = req.body;
-
     let task = await Task.findById(req.params.taskId);
     if (!task) return res.status(404).json({ message: 'Task not found' });
 
-    // Check if status actually changed to trigger a notification
     if (status && task.status !== status) {
       if (task.createdBy.toString() !== req.user.id) {
-        // 1. Save to database
         const newNotification = new Notification({
           user: task.createdBy,
           message: `Your task "${task.title}" was moved to ${status}.`
         });
         await newNotification.save();
-
-        // 2. NEW: Emit real-time live event to the specific user's private room
         const io = req.app.get('io');
-        io.to(task.createdBy.toString()).emit('new_notification', newNotification);
+        if (io) io.to(task.createdBy.toString()).emit('new_notification', newNotification);
       }
     }
 
@@ -79,9 +82,30 @@ router.put('/:taskId', auth, async (req, res) => {
 
     await task.save();
     res.json(task);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server Error');
+  } catch (err) { res.status(500).send('Server Error'); }
+});
+
+// @route   POST /api/tasks/:taskId/upload
+// @desc    Upload an attachment to a specific task
+router.post('/:taskId/upload', auth, upload.single('attachment'), async (req, res) => {
+  try {
+    let task = await Task.findById(req.params.taskId);
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+
+    // Save the Cloudinary URL to the task
+    task.attachmentUrl = req.file.path;
+    await task.save();
+
+    // Trigger real-time update for everyone viewing the board
+    const io = req.app.get('io');
+    if (io) io.to(task.project.toString()).emit('task_changed');
+
+    res.json(task);
+  } catch (err) { 
+    console.error(err);
+    res.status(500).send('Server Error uploading file'); 
   }
 });
 
