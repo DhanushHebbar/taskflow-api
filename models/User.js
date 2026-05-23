@@ -7,7 +7,11 @@ const UserSchema = new mongoose.Schema({
   role: { 
     type: String, 
     enum: ['user', 'admin'], 
-    default: 'user' // Default everyone to 'user'
+    default: 'user' 
+  },
+  avatar: {
+    type: String,
+    default: '' // Will hold the Cloudinary image URL
   },
   createdAt: { type: Date, default: Date.now }
 });
