@@ -3,7 +3,9 @@ const router = express.Router();
 const crypto = require('crypto');
 const auth = require('../middleware/auth');
 const Workspace = require('../models/Workspace');
-const Notification = require('../models/Notification'); // NEW
+const Notification = require('../models/Notification');
+const Project = require('../models/Project'); // NEW IMPORT
+const Task = require('../models/Task');       // NEW IMPORT
 
 // @route   POST /api/workspaces
 router.post('/', auth, async (req, res) => {
@@ -61,7 +63,6 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // @route   PUT /api/workspaces/:id/members/:userId
-// @desc    Change a member's role and notify them live
 router.put('/:id/members/:userId', auth, async (req, res) => {
   try {
     const { role } = req.body;
@@ -86,7 +87,6 @@ router.put('/:id/members/:userId', auth, async (req, res) => {
     targetMember.role = role;
     await workspace.save();
 
-    // LIVE NOTIFICATION: Role Change
     if (req.user.id !== req.params.userId) {
       const notification = new Notification({
         user: req.params.userId,
@@ -102,7 +102,6 @@ router.put('/:id/members/:userId', auth, async (req, res) => {
 });
 
 // @route   DELETE /api/workspaces/:id/members/:userId
-// @desc    Remove a member and force redirect them live
 router.delete('/:id/members/:userId', auth, async (req, res) => {
   try {
     const workspace = await Workspace.findById(req.params.id);
@@ -125,7 +124,6 @@ router.delete('/:id/members/:userId', auth, async (req, res) => {
     workspace.members = workspace.members.filter(m => m.user.toString() !== req.params.userId);
     await workspace.save();
 
-    // LIVE NOTIFICATION & KICK REDIRECT
     if (req.user.id !== req.params.userId) {
       const notification = new Notification({
         user: req.params.userId,
@@ -136,12 +134,45 @@ router.delete('/:id/members/:userId', auth, async (req, res) => {
       const io = req.app.get('io');
       if (io) {
         io.to(req.params.userId).emit('new_notification', notification);
-        // Special event to force the frontend to kick the user
         io.to(req.params.userId).emit('kicked_from_workspace', workspace._id); 
       }
     }
 
     res.json(workspace);
+  } catch (err) { res.status(500).send('Server Error'); }
+});
+
+// NEW FEATURE: DELETE WORKSPACE (OWNER ONLY)
+// @route   DELETE /api/workspaces/:id
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const workspaceId = req.params.id;
+    const workspace = await Workspace.findById(workspaceId);
+    if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
+
+    // Strict Role Check: Must be Owner
+    const requester = workspace.members.find(m => m.user.toString() === req.user.id);
+    if (!requester || requester.role !== 'owner') {
+      return res.status(403).json({ message: 'Danger Zone: Only the Workspace Owner can permanently delete the workspace.' });
+    }
+
+    // Cascade Delete
+    const projects = await Project.find({ workspace: workspaceId });
+    const projectIds = projects.map(p => p._id);
+    
+    await Task.deleteMany({ project: { $in: projectIds } });
+    await Project.deleteMany({ workspace: workspaceId });
+    await Workspace.findByIdAndDelete(workspaceId);
+
+    // Notify all members that the workspace is gone
+    const io = req.app.get('io');
+    if (io) {
+      workspace.members.forEach(m => {
+        io.to(m.user.toString()).emit('kicked_from_workspace', workspace._id);
+      });
+    }
+
+    res.json({ message: 'Workspace permanently deleted' });
   } catch (err) { res.status(500).send('Server Error'); }
 });
 
