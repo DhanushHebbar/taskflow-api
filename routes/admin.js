@@ -16,23 +16,33 @@ router.get('/stats', auth, admin, async (req, res) => {
   } catch (err) { res.status(500).send('Server Error'); }
 });
 
-// @route   GET /api/admin/users
-// @desc    Get all registered users
-router.get('/users', auth, admin, async (req, res) => {
-  try {
-    const users = await User.find().select('-password').sort({ createdAt: -1 });
-    res.json(users);
-  } catch (err) { res.status(500).send('Server Error'); }
-});
-
 // @route   PUT /api/admin/users/:id/role
 // @desc    Promote or demote a user
-router.get('/users/:id/role', auth, admin, async (req, res) => {
+router.put('/users/:id/role', auth, admin, async (req, res) => {
   try {
     const { role } = req.body;
-    const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true }).select('-password');
+    
+    // Security check: Only allow valid roles
+    if (!['user', 'admin'].includes(role)) {
+      return res.status(400).json({ message: 'Invalid role provided' });
+    }
+
+    // Prevent the admin from accidentally demoting themselves
+    if (req.user.id === req.params.id) {
+      return res.status(400).json({ message: 'You cannot change your own role.' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id, 
+      { role }, 
+      { new: true }
+    ).select('-password');
+    
     res.json(user);
-  } catch (err) { res.status(500).send('Server Error'); }
+  } catch (err) { 
+    console.error(err);
+    res.status(500).send('Server Error'); 
+  }
 });
 
 // @route   DELETE /api/admin/users/:id
