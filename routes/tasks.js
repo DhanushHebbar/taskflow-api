@@ -3,6 +3,7 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const Task = require('../models/Task');
 const Project = require('../models/Project');
+const Notification = require('../models/Notification'); // ADDED
 
 // @route   POST /api/tasks
 // @desc    Create a task inside a project
@@ -12,9 +13,7 @@ router.post('/', auth, async (req, res) => {
     const { title, description, priority, projectId, assignedTo } = req.body;
 
     const project = await Project.findById(projectId);
-    if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
-    }
+    if (!project) return res.status(404).json({ message: 'Project not found' });
 
     const newTask = new Task({
       title,
@@ -54,8 +53,18 @@ router.put('/:taskId', auth, async (req, res) => {
     const { title, description, status, priority, assignedTo } = req.body;
 
     let task = await Task.findById(req.params.taskId);
-    if (!task) {
-      return res.status(404).json({ message: 'Task not found' });
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    // Check if status actually changed to trigger a notification
+    if (status && task.status !== status) {
+      // Create a notification for the task creator if someone else moves it
+      if (task.createdBy.toString() !== req.user.id) {
+        const newNotification = new Notification({
+          user: task.createdBy,
+          message: `Your task "${task.title}" was moved to ${status}.`
+        });
+        await newNotification.save();
+      }
     }
 
     if (title) task.title = title;
