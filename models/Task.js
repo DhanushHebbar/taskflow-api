@@ -32,6 +32,9 @@ const TaskSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
+  attachmentUrl: {
+    type: String, // NEW: Stores the Cloudinary file link
+  },
   createdAt: {
     type: Date,
     default: Date.now,
