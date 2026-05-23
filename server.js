@@ -7,7 +7,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors({ origin: process.env.FRONTEND_URL || '*' })); // Will lock this down to Vercel later
+app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
 app.use(express.json());
 
 // Database Connection
@@ -15,7 +15,10 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('Successfully connected to MongoDB Atlas!'))
   .catch((err) => console.error('MongoDB connection error:', err));
 
-// Health Check Route (Crucial for Render free tier)
+// Define Routes
+app.use('/api/auth', require('./routes/auth'));
+
+// Health Check Route
 app.get('/api/health', (req, res) => {
   res.status(200).json({ 
     status: 'Active', 
