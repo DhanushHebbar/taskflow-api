@@ -4,25 +4,20 @@ const auth = require('../middleware/auth');
 const Task = require('../models/Task');
 const Project = require('../models/Project');
 const Notification = require('../models/Notification');
+const ActivityLog = require('../models/ActivityLog'); // NEW IMPORT
 const multer = require('multer');
 const { v2: cloudinary } = require('cloudinary');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
-// Configure Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// Configure Multer Storage
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
-  params: {
-    folder: 'taskflow_attachments',
-    allowed_formats: ['jpg', 'png', 'jpeg', 'pdf'],
-    resource_type: 'auto' 
-  },
+  params: { folder: 'taskflow_attachments', allowed_formats: ['jpg', 'png', 'jpeg', 'pdf'], resource_type: 'auto' },
 });
 const upload = multer({ storage: storage });
 
@@ -34,14 +29,19 @@ router.post('/', auth, async (req, res) => {
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
     const newTask = new Task({
-      title, description, priority,
-      project: projectId,
-      assignedTo: assignedTo || null,
-      createdBy: req.user.id,
-      attachments: [] // Initialize empty array
+      title, description, priority, project: projectId, assignedTo: assignedTo || null, createdBy: req.user.id, attachments: []
     });
 
     const task = await newTask.save();
+
+    // 🔴 LOG CREATION ACTIVITY
+    await ActivityLog.create({
+      workspace: project.workspace,
+      user: req.user.id,
+      action: 'CREATE_TASK',
+      details: `Created task "${title}" in project "${project.name}"`
+    });
+
     res.json(task);
   } catch (err) { res.status(500).send('Server Error'); }
 });
@@ -61,16 +61,26 @@ router.put('/:taskId', auth, async (req, res) => {
     let task = await Task.findById(req.params.taskId);
     if (!task) return res.status(404).json({ message: 'Task not found' });
 
+    // Grab project to find the workspace ID for logging
+    const project = await Project.findById(task.project);
+
     if (status && task.status !== status) {
       if (task.createdBy.toString() !== req.user.id) {
         const newNotification = new Notification({
-          user: task.createdBy,
-          message: `Your task "${task.title}" was moved to ${status}.`
+          user: task.createdBy, message: `Your task "${task.title}" was moved to ${status}.`
         });
         await newNotification.save();
         const io = req.app.get('io');
         if (io) io.to(task.createdBy.toString()).emit('new_notification', newNotification);
       }
+
+      // 🔴 LOG STATUS UPDATE ACTIVITY
+      await ActivityLog.create({
+        workspace: project.workspace,
+        user: req.user.id,
+        action: 'UPDATE_TASK_STATUS',
+        details: `Moved task "${task.title}" to ${status}`
+      });
     }
 
     if (title) task.title = title;
@@ -85,32 +95,21 @@ router.put('/:taskId', auth, async (req, res) => {
 });
 
 // @route   POST /api/tasks/:taskId/upload
-// @desc    Upload multiple attachments to a specific task
 router.post('/:taskId/upload', auth, upload.array('attachments', 10), async (req, res) => {
   try {
     let task = await Task.findById(req.params.taskId);
     if (!task) return res.status(404).json({ message: 'Task not found' });
+    if (!req.files || req.files.length === 0) return res.status(400).json({ message: 'No files uploaded' });
 
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ message: 'No files uploaded' });
-    }
-
-    // Extract all new Cloudinary URLs from the uploaded files
     const newAttachmentUrls = req.files.map(file => file.path);
-
-    // Append to existing attachments array
     task.attachments = [...(task.attachments || []), ...newAttachmentUrls];
     await task.save();
 
-    // Trigger real-time update
     const io = req.app.get('io');
     if (io) io.to(task.project.toString()).emit('task_changed');
 
     res.json(task);
-  } catch (err) { 
-    console.error(err);
-    res.status(500).send('Server Error uploading files'); 
-  }
+  } catch (err) { res.status(500).send('Server Error uploading files'); }
 });
 
 module.exports = router;
