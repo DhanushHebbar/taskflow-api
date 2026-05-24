@@ -3,39 +3,37 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// @route   POST /api/ai/enhance-task
-// @desc    Generate a professional task description based on a title
 router.post('/enhance-task', auth, async (req, res) => {
   try {
     const { title } = req.body;
 
-    if (!title) {
-      return res.status(400).json({ message: 'Task title is required for AI enhancement' });
-    }
+    if (!title) return res.status(400).json({ message: 'Task title is required for AI enhancement' });
+    if (!process.env.GEMINI_API_KEY) return res.status(500).json({ message: 'AI API key is not configured.' });
 
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({ message: 'AI API key is not configured on the server.' });
-    }
-
-    // Initialize the Gemini API
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    
-    // UPDATED: Using the high-speed, app-optimized 2.5 Flash model
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-    // The Prompt Engineering Instruction
+    // NEW: We force Gemini to return a JSON object with the exact priority
     const prompt = `
-      You are an expert Agile Project Manager. A developer is creating a task ticket with the following title: "${title}".
-      Write a concise, professional task description. Include:
-      1. A brief summary of the objective (1-2 sentences).
-      2. A short bulleted list of Acceptance Criteria.
-      Keep the formatting clean using basic text and dashes for bullets (no markdown bolding as it will go into a standard text box). Do not include introductory conversational text.
+      You are an expert Agile Project Manager. A developer is creating a task with the title: "${title}".
+      You must respond with ONLY a valid JSON object. Do not include any markdown formatting, backticks, or conversational text.
+      The JSON object must have exactly two keys:
+      1. "description": A concise professional task description with a short bulleted list of Acceptance Criteria. (Use plain text dashes for bullets).
+      2. "priority": Evaluate the urgency of the title and return exactly one of these strings: "High", "Medium", or "Low".
     `;
 
     const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    let responseText = result.response.text().trim();
+    
+    // Safety check: Strip markdown if Gemini accidentally adds it
+    responseText = responseText.replace(/^```json/i, '').replace(/```$/i, '').trim();
+    
+    const data = JSON.parse(responseText);
 
-    res.json({ enhancedDescription: responseText.trim() });
+    res.json({ 
+      enhancedDescription: data.description.trim(),
+      suggestedPriority: data.priority 
+    });
   } catch (err) {
     console.error('Gemini API Error:', err);
     res.status(500).json({ message: 'Failed to generate AI content. Please try again later.' });
