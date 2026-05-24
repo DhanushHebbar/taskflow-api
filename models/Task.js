@@ -38,6 +38,9 @@ const TaskSchema = new mongoose.Schema({
   attachments: [{
     type: String, // NEW: Stores an array of Cloudinary file links
   }],
+  // NEW: Deadline & Automation tracking
+  dueDate: { type: Date }, 
+  isNotified: { type: Boolean, default: false },
   createdAt: {
     type: Date,
     default: Date.now,
