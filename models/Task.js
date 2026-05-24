@@ -36,35 +36,39 @@ const TaskSchema = new mongoose.Schema({
     type: String, // Kept for backwards compatibility with your older test tasks
   },
   attachments: [{
-    type: String, // NEW: Stores an array of Cloudinary file links
+    type: String, // Stores an array of Cloudinary file links
   }],
-  // NEW: Deadline & Automation tracking
+  
+  // Deadline & Automation tracking
   dueDate: { type: Date }, 
   isNotified: { type: Boolean, default: false },
-  // NEW: Sprint Tracking
+  
+  // Sprint Tracking
   sprint: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'Sprint',
     default: null 
   },
-  // 🔴 NEW: Real-Time Time Tracking
+  
+  // Real-Time Time Tracking
   timeSpent: { type: Number, default: 0 }, // Total time tracked in seconds
   timerStartedAt: { type: Date, default: null }, // Timestamp when play was pressed
   isTimerRunning: { type: Boolean, default: false }, // Is the stopwatch active right now?
 
-  // 🔴 NEW: User Identity Time Tracking
+  // User Identity Time Tracking
   timerStartedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   timeLogs: [{
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     seconds: { type: Number, default: 0 }
   }],
-  // 🔴 NEW: Create a MongoDB Text Index for Lightning-Fast Search
-TaskSchema.index({ title: 'text', description: 'text' });
   
   createdAt: {
     type: Date,
     default: Date.now,
   },
 });
+
+// 🔴 THE FIX: The index must be declared AFTER the schema object is closed!
+TaskSchema.index({ title: 'text', description: 'text' });
 
 module.exports = mongoose.model('Task', TaskSchema);
