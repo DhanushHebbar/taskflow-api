@@ -29,7 +29,6 @@ const determinePriority = (text) => {
   return 'Medium';
 };
 
-// @route   POST /api/tasks
 router.post('/', auth, async (req, res) => {
   try {
     const { title, description, priority, projectId, assignedTo, dueDate, sprint } = req.body;
@@ -37,9 +36,7 @@ router.post('/', auth, async (req, res) => {
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
     let finalPriority = priority;
-    if (priority === 'Auto') {
-      finalPriority = determinePriority(`${title} ${description}`);
-    }
+    if (priority === 'Auto') finalPriority = determinePriority(`${title} ${description}`);
 
     const newTask = new Task({
       title, description, priority: finalPriority, project: projectId, 
@@ -48,47 +45,36 @@ router.post('/', auth, async (req, res) => {
     });
 
     const task = await newTask.save();
-
-    await ActivityLog.create({
-      workspace: project.workspace, user: req.user.id, action: 'CREATE_TASK',
-      details: `Created task "${title}" [Priority: ${finalPriority}]`
-    });
-
+    await ActivityLog.create({ workspace: project.workspace, user: req.user.id, action: 'CREATE_TASK', details: `Created task "${title}"` });
     res.json(task);
   } catch (err) { res.status(500).send('Server Error'); }
 });
 
-// @route   GET /api/tasks/:projectId
 router.get('/:projectId', auth, async (req, res) => {
   try {
-    const tasks = await Task.find({ project: req.params.projectId }).sort({ createdAt: -1 });
+    // 🔴 FIXED: Use populate so the frontend knows the names of the people who worked on it
+    const tasks = await Task.find({ project: req.params.projectId })
+      .populate('timeLogs.user', 'name avatar')
+      .sort({ createdAt: -1 });
     res.json(tasks);
   } catch (err) { res.status(500).send('Server Error'); }
 });
 
-// @route   PUT /api/tasks/:taskId
 router.put('/:taskId', auth, async (req, res) => {
   try {
     const { title, description, status, priority, assignedTo, dueDate, sprint } = req.body;
     let task = await Task.findById(req.params.taskId);
     if (!task) return res.status(404).json({ message: 'Task not found' });
-
     const project = await Project.findById(task.project);
 
     if (status && task.status !== status) {
       if (task.createdBy.toString() !== req.user.id) {
-        const newNotification = new Notification({
-          user: task.createdBy, message: `Your task "${task.title}" was moved to ${status}.`
-        });
+        const newNotification = new Notification({ user: task.createdBy, message: `Your task "${task.title}" was moved to ${status}.` });
         await newNotification.save();
         const io = req.app.get('io');
         if (io) io.to(task.createdBy.toString()).emit('new_notification', newNotification);
       }
-
-      await ActivityLog.create({
-        workspace: project.workspace, user: req.user.id, action: 'UPDATE_TASK_STATUS',
-        details: `Moved task "${task.title}" to ${status}`
-      });
+      await ActivityLog.create({ workspace: project.workspace, user: req.user.id, action: 'UPDATE_TASK_STATUS', details: `Moved task to ${status}` });
     }
 
     if (title) task.title = title;
@@ -104,7 +90,6 @@ router.put('/:taskId', auth, async (req, res) => {
   } catch (err) { res.status(500).send('Server Error'); }
 });
 
-// @route   POST /api/tasks/:taskId/upload
 router.post('/:taskId/upload', auth, upload.array('attachments', 10), async (req, res) => {
   try {
     let task = await Task.findById(req.params.taskId);
@@ -114,15 +99,12 @@ router.post('/:taskId/upload', auth, upload.array('attachments', 10), async (req
     const newAttachmentUrls = req.files.map(file => file.path);
     task.attachments = [...(task.attachments || []), ...newAttachmentUrls];
     await task.save();
-
     const io = req.app.get('io');
     if (io) io.to(task.project.toString()).emit('task_changed');
-
     res.json(task);
   } catch (err) { res.status(500).send('Server Error uploading files'); }
 });
 
-// 🔴 NEW: Start Time Tracker
 router.post('/:taskId/timer/start', auth, async (req, res) => {
   try {
     let task = await Task.findById(req.params.taskId);
@@ -131,34 +113,42 @@ router.post('/:taskId/timer/start', auth, async (req, res) => {
 
     task.isTimerRunning = true;
     task.timerStartedAt = new Date();
+    // 🔴 NEW: Lock the timer to the user who clicked start
+    task.timerStartedBy = req.user.id;
     await task.save();
 
     const io = req.app.get('io');
     if (io) io.to(task.project.toString()).emit('task_changed');
-
     res.json(task);
   } catch (err) { res.status(500).send('Server Error starting timer'); }
 });
 
-// 🔴 NEW: Stop Time Tracker
 router.post('/:taskId/timer/stop', auth, async (req, res) => {
   try {
     let task = await Task.findById(req.params.taskId);
     if (!task) return res.status(404).json({ message: 'Task not found' });
     if (!task.isTimerRunning) return res.status(400).json({ message: 'Timer is not running' });
 
-    // Calculate how many seconds passed since they clicked Start
     const now = new Date();
     const diffInSeconds = Math.floor((now - task.timerStartedAt) / 1000);
 
     task.timeSpent += diffInSeconds;
+    
+    // 🔴 NEW: Find the user in the ledger and add their seconds
+    const logIndex = task.timeLogs.findIndex(log => log.user.toString() === task.timerStartedBy.toString());
+    if (logIndex > -1) {
+      task.timeLogs[logIndex].seconds += diffInSeconds;
+    } else {
+      task.timeLogs.push({ user: task.timerStartedBy, seconds: diffInSeconds });
+    }
+
     task.isTimerRunning = false;
     task.timerStartedAt = null;
+    task.timerStartedBy = null;
     await task.save();
 
     const io = req.app.get('io');
     if (io) io.to(task.project.toString()).emit('task_changed');
-
     res.json(task);
   } catch (err) { res.status(500).send('Server Error stopping timer'); }
 });
