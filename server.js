@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
+const startWatchdog = require('./cron/watchdog');
 require('dotenv').config();
 
 const app = express();
@@ -12,7 +13,6 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
 app.use(express.json());
-app.use('/api/admin', require('./routes/admin')); 
 
 // Socket.io Configuration
 const io = new Server(server, {
@@ -34,7 +34,7 @@ io.on('connection', (socket) => {
     socket.to(projectId).emit('task_changed');
   });
 
-  // NEW: User-specific real-time notifications
+  // User-specific real-time notifications
   socket.on('join_user', (userId) => {
     socket.join(userId);
   });
@@ -59,7 +59,6 @@ app.use('/api/ai', require('./routes/ai'));
 app.use('/api/activity', require('./routes/activity'));
 app.use('/api/users', require('./routes/users')); 
 
-
 // Health Check Route
 app.get('/api/health', (req, res) => {
   res.status(200).json({ 
@@ -72,4 +71,8 @@ app.get('/api/health', (req, res) => {
 // Start Server
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  
+  // 🔴 INJECT WATCHDOG HERE
+  // This passes the Socket.io instance so the cron job can send live notifications
+  startWatchdog(io); 
 });
