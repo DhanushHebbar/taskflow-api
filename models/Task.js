@@ -51,6 +51,13 @@ const TaskSchema = new mongoose.Schema({
   timeSpent: { type: Number, default: 0 }, // Total time tracked in seconds
   timerStartedAt: { type: Date, default: null }, // Timestamp when play was pressed
   isTimerRunning: { type: Boolean, default: false }, // Is the stopwatch active right now?
+
+  // 🔴 NEW: User Identity Time Tracking
+  timerStartedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  timeLogs: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    seconds: { type: Number, default: 0 }
+  }],
   
   createdAt: {
     type: Date,
