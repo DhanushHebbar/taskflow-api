@@ -41,6 +41,13 @@ const TaskSchema = new mongoose.Schema({
   // NEW: Deadline & Automation tracking
   dueDate: { type: Date }, 
   isNotified: { type: Boolean, default: false },
+  // NEW: Sprint Tracking
+  sprint: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Sprint',
+    default: null 
+  },
+  
   createdAt: {
     type: Date,
     default: Date.now,
