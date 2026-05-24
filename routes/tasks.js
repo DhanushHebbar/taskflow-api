@@ -4,7 +4,7 @@ const auth = require('../middleware/auth');
 const Task = require('../models/Task');
 const Project = require('../models/Project');
 const Notification = require('../models/Notification');
-const ActivityLog = require('../models/ActivityLog'); // NEW IMPORT
+const ActivityLog = require('../models/ActivityLog');
 const multer = require('multer');
 const { v2: cloudinary } = require('cloudinary');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
@@ -21,25 +21,46 @@ const storage = new CloudinaryStorage({
 });
 const upload = multer({ storage: storage });
 
+// 🔴 NEW: AI-Driven Impact Scoring Engine
+const determinePriority = (text) => {
+  if (!text) return 'Medium';
+  const lower = text.toLowerCase();
+  if (/(urgent|asap|critical|blocker|emergency|immediate)/.test(lower)) return 'High';
+  if (/(whenever|low priority|backlog|someday|minor)/.test(lower)) return 'Low';
+  return 'Medium';
+};
+
 // @route   POST /api/tasks
 router.post('/', auth, async (req, res) => {
   try {
-    const { title, description, priority, projectId, assignedTo } = req.body;
+    const { title, description, priority, projectId, assignedTo, dueDate } = req.body;
     const project = await Project.findById(projectId);
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
+    // 🔴 Calculate Impact if "Auto" is selected
+    let finalPriority = priority;
+    if (priority === 'Auto') {
+      finalPriority = determinePriority(`${title} ${description}`);
+    }
+
     const newTask = new Task({
-      title, description, priority, project: projectId, assignedTo: assignedTo || null, createdBy: req.user.id, attachments: []
+      title, 
+      description, 
+      priority: finalPriority, 
+      project: projectId, 
+      assignedTo: assignedTo || null, 
+      createdBy: req.user.id, 
+      attachments: [],
+      dueDate: dueDate || null // 🔴 Save the Due Date
     });
 
     const task = await newTask.save();
 
-    // 🔴 LOG CREATION ACTIVITY
     await ActivityLog.create({
       workspace: project.workspace,
       user: req.user.id,
       action: 'CREATE_TASK',
-      details: `Created task "${title}" in project "${project.name}"`
+      details: `Created task "${title}" [Priority: ${finalPriority}]`
     });
 
     res.json(task);
@@ -57,11 +78,10 @@ router.get('/:projectId', auth, async (req, res) => {
 // @route   PUT /api/tasks/:taskId
 router.put('/:taskId', auth, async (req, res) => {
   try {
-    const { title, description, status, priority, assignedTo } = req.body;
+    const { title, description, status, priority, assignedTo, dueDate } = req.body;
     let task = await Task.findById(req.params.taskId);
     if (!task) return res.status(404).json({ message: 'Task not found' });
 
-    // Grab project to find the workspace ID for logging
     const project = await Project.findById(task.project);
 
     if (status && task.status !== status) {
@@ -74,7 +94,6 @@ router.put('/:taskId', auth, async (req, res) => {
         if (io) io.to(task.createdBy.toString()).emit('new_notification', newNotification);
       }
 
-      // 🔴 LOG STATUS UPDATE ACTIVITY
       await ActivityLog.create({
         workspace: project.workspace,
         user: req.user.id,
@@ -88,6 +107,12 @@ router.put('/:taskId', auth, async (req, res) => {
     if (status) task.status = status;
     if (priority) task.priority = priority;
     if (assignedTo !== undefined) task.assignedTo = assignedTo;
+    
+    // 🔴 Update Due Date & Reset Notification if date changes
+    if (dueDate !== undefined) {
+      task.dueDate = dueDate;
+      task.isNotified = false; 
+    }
 
     await task.save();
     res.json(task);
