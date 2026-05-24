@@ -32,7 +32,6 @@ const determinePriority = (text) => {
 // @route   POST /api/tasks
 router.post('/', auth, async (req, res) => {
   try {
-    // 🔴 FIXED: Extract sprint from req.body
     const { title, description, priority, projectId, assignedTo, dueDate, sprint } = req.body;
     const project = await Project.findById(projectId);
     if (!project) return res.status(404).json({ message: 'Project not found' });
@@ -43,23 +42,15 @@ router.post('/', auth, async (req, res) => {
     }
 
     const newTask = new Task({
-      title, 
-      description, 
-      priority: finalPriority, 
-      project: projectId, 
-      assignedTo: assignedTo || null, 
-      createdBy: req.user.id, 
-      attachments: [],
-      dueDate: dueDate || null,
-      sprint: sprint || null // 🔴 FIXED: Save the sprint
+      title, description, priority: finalPriority, project: projectId, 
+      assignedTo: assignedTo || null, createdBy: req.user.id, attachments: [],
+      dueDate: dueDate || null, sprint: sprint || null 
     });
 
     const task = await newTask.save();
 
     await ActivityLog.create({
-      workspace: project.workspace,
-      user: req.user.id,
-      action: 'CREATE_TASK',
+      workspace: project.workspace, user: req.user.id, action: 'CREATE_TASK',
       details: `Created task "${title}" [Priority: ${finalPriority}]`
     });
 
@@ -78,7 +69,6 @@ router.get('/:projectId', auth, async (req, res) => {
 // @route   PUT /api/tasks/:taskId
 router.put('/:taskId', auth, async (req, res) => {
   try {
-    // 🔴 FIXED: Extract sprint from req.body
     const { title, description, status, priority, assignedTo, dueDate, sprint } = req.body;
     let task = await Task.findById(req.params.taskId);
     if (!task) return res.status(404).json({ message: 'Task not found' });
@@ -96,9 +86,7 @@ router.put('/:taskId', auth, async (req, res) => {
       }
 
       await ActivityLog.create({
-        workspace: project.workspace,
-        user: req.user.id,
-        action: 'UPDATE_TASK_STATUS',
+        workspace: project.workspace, user: req.user.id, action: 'UPDATE_TASK_STATUS',
         details: `Moved task "${task.title}" to ${status}`
       });
     }
@@ -108,16 +96,8 @@ router.put('/:taskId', auth, async (req, res) => {
     if (status) task.status = status;
     if (priority) task.priority = priority;
     if (assignedTo !== undefined) task.assignedTo = assignedTo;
-    
-    if (dueDate !== undefined) {
-      task.dueDate = dueDate;
-      task.isNotified = false; 
-    }
-
-    // 🔴 FIXED: Actually save the sprint field during edits!
-    if (sprint !== undefined) {
-      task.sprint = sprint;
-    }
+    if (dueDate !== undefined) { task.dueDate = dueDate; task.isNotified = false; }
+    if (sprint !== undefined) { task.sprint = sprint; }
 
     await task.save();
     res.json(task);
@@ -140,6 +120,47 @@ router.post('/:taskId/upload', auth, upload.array('attachments', 10), async (req
 
     res.json(task);
   } catch (err) { res.status(500).send('Server Error uploading files'); }
+});
+
+// 🔴 NEW: Start Time Tracker
+router.post('/:taskId/timer/start', auth, async (req, res) => {
+  try {
+    let task = await Task.findById(req.params.taskId);
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+    if (task.isTimerRunning) return res.status(400).json({ message: 'Timer is already running' });
+
+    task.isTimerRunning = true;
+    task.timerStartedAt = new Date();
+    await task.save();
+
+    const io = req.app.get('io');
+    if (io) io.to(task.project.toString()).emit('task_changed');
+
+    res.json(task);
+  } catch (err) { res.status(500).send('Server Error starting timer'); }
+});
+
+// 🔴 NEW: Stop Time Tracker
+router.post('/:taskId/timer/stop', auth, async (req, res) => {
+  try {
+    let task = await Task.findById(req.params.taskId);
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+    if (!task.isTimerRunning) return res.status(400).json({ message: 'Timer is not running' });
+
+    // Calculate how many seconds passed since they clicked Start
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - task.timerStartedAt) / 1000);
+
+    task.timeSpent += diffInSeconds;
+    task.isTimerRunning = false;
+    task.timerStartedAt = null;
+    await task.save();
+
+    const io = req.app.get('io');
+    if (io) io.to(task.project.toString()).emit('task_changed');
+
+    res.json(task);
+  } catch (err) { res.status(500).send('Server Error stopping timer'); }
 });
 
 module.exports = router;
