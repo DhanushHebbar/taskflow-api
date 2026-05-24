@@ -13,11 +13,12 @@ const ActivityLogSchema = new mongoose.Schema({
   },
   action: {
     type: String,
-    enum: ['CREATE_PROJECT', 'DELETE_PROJECT', 'CREATE_TASK', 'UPDATE_TASK_STATUS', 'DELETE_TASK'],
+    // 🔴 FIXED: Added CREATE_SPRINT and UPDATE_SPRINT to the allowed list
+    enum: ['CREATE_PROJECT', 'DELETE_PROJECT', 'CREATE_TASK', 'UPDATE_TASK_STATUS', 'DELETE_TASK', 'CREATE_SPRINT', 'UPDATE_SPRINT'],
     required: true
   },
   details: {
-    type: String, // e.g., "Moved task 'Design UI' to Completed"
+    type: String, 
     required: true
   },
   createdAt: {
