@@ -3,7 +3,7 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const Task = require('../models/Task');
 const Project = require('../models/Project');
-const Workspace = require('../models/Workspace'); // 🔴 NEW: For team roster
+const Workspace = require('../models/Workspace'); 
 const Notification = require('../models/Notification');
 const ActivityLog = require('../models/ActivityLog');
 const multer = require('multer');
@@ -30,28 +30,34 @@ const determinePriority = (text) => {
   return 'Medium';
 };
 
-// 🔴 NEW: Cognitive Workload Balancer Endpoint
-// Calculates current load (High=3, Med=2, Low=1) and returns sorted roster
+// 🔴 BUG FIX: Correctly populate the nested members.user field
 router.get('/workload/:projectId', auth, async (req, res) => {
   try {
     const project = await Project.findById(req.params.projectId);
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    const workspace = await Workspace.findById(project.workspace).populate('members', 'name email avatar');
+    // The fix is here -> populate('members.user') instead of just 'members'
+    const workspace = await Workspace.findById(project.workspace)
+      .populate('members.user', 'name email avatar');
+      
     if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
 
     const activeTasks = await Task.find({ project: req.params.projectId, status: { $ne: 'Completed' } });
 
-    const workload = workspace.members.map(member => {
-      const userTasks = activeTasks.filter(t => t.assignedTo?.toString() === member._id.toString());
+    const workload = workspace.members.map(memberObj => {
+      // Safely extract the populated user object
+      const actualUser = memberObj.user;
+      if (!actualUser) return null;
+
+      const userTasks = activeTasks.filter(t => t.assignedTo?.toString() === actualUser._id.toString());
       let score = 0;
       userTasks.forEach(t => {
         if (t.priority === 'High') score += 3;
         else if (t.priority === 'Medium') score += 2;
         else score += 1;
       });
-      return { user: member, taskCount: userTasks.length, loadScore: score };
-    });
+      return { user: actualUser, taskCount: userTasks.length, loadScore: score };
+    }).filter(item => item !== null);
 
     // Sort by loadScore ascending (Lowest loaded user is at index 0)
     workload.sort((a, b) => a.loadScore - b.loadScore);
@@ -63,7 +69,6 @@ router.get('/workload/:projectId', auth, async (req, res) => {
   }
 });
 
-// @route   POST /api/tasks
 router.post('/', auth, async (req, res) => {
   try {
     const { title, description, priority, projectId, assignedTo, dueDate, sprint } = req.body;
@@ -85,18 +90,16 @@ router.post('/', auth, async (req, res) => {
   } catch (err) { res.status(500).send('Server Error'); }
 });
 
-// @route   GET /api/tasks/:projectId
 router.get('/:projectId', auth, async (req, res) => {
   try {
     const tasks = await Task.find({ project: req.params.projectId })
       .populate('timeLogs.user', 'name avatar')
-      .populate('assignedTo', 'name avatar') // 🔴 NEW: Fetch assignee details for frontend cards
+      .populate('assignedTo', 'name avatar') 
       .sort({ createdAt: -1 });
     res.json(tasks);
   } catch (err) { res.status(500).send('Server Error'); }
 });
 
-// @route   PUT /api/tasks/:taskId
 router.put('/:taskId', auth, async (req, res) => {
   try {
     const { title, description, status, priority, assignedTo, dueDate, sprint } = req.body;
