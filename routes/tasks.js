@@ -21,7 +21,6 @@ const storage = new CloudinaryStorage({
 });
 const upload = multer({ storage: storage });
 
-// 🔴 NEW: AI-Driven Impact Scoring Engine
 const determinePriority = (text) => {
   if (!text) return 'Medium';
   const lower = text.toLowerCase();
@@ -33,11 +32,11 @@ const determinePriority = (text) => {
 // @route   POST /api/tasks
 router.post('/', auth, async (req, res) => {
   try {
-    const { title, description, priority, projectId, assignedTo, dueDate } = req.body;
+    // 🔴 FIXED: Extract sprint from req.body
+    const { title, description, priority, projectId, assignedTo, dueDate, sprint } = req.body;
     const project = await Project.findById(projectId);
     if (!project) return res.status(404).json({ message: 'Project not found' });
 
-    // 🔴 Calculate Impact if "Auto" is selected
     let finalPriority = priority;
     if (priority === 'Auto') {
       finalPriority = determinePriority(`${title} ${description}`);
@@ -51,7 +50,8 @@ router.post('/', auth, async (req, res) => {
       assignedTo: assignedTo || null, 
       createdBy: req.user.id, 
       attachments: [],
-      dueDate: dueDate || null // 🔴 Save the Due Date
+      dueDate: dueDate || null,
+      sprint: sprint || null // 🔴 FIXED: Save the sprint
     });
 
     const task = await newTask.save();
@@ -78,7 +78,8 @@ router.get('/:projectId', auth, async (req, res) => {
 // @route   PUT /api/tasks/:taskId
 router.put('/:taskId', auth, async (req, res) => {
   try {
-    const { title, description, status, priority, assignedTo, dueDate } = req.body;
+    // 🔴 FIXED: Extract sprint from req.body
+    const { title, description, status, priority, assignedTo, dueDate, sprint } = req.body;
     let task = await Task.findById(req.params.taskId);
     if (!task) return res.status(404).json({ message: 'Task not found' });
 
@@ -108,10 +109,14 @@ router.put('/:taskId', auth, async (req, res) => {
     if (priority) task.priority = priority;
     if (assignedTo !== undefined) task.assignedTo = assignedTo;
     
-    // 🔴 Update Due Date & Reset Notification if date changes
     if (dueDate !== undefined) {
       task.dueDate = dueDate;
       task.isNotified = false; 
+    }
+
+    // 🔴 FIXED: Actually save the sprint field during edits!
+    if (sprint !== undefined) {
+      task.sprint = sprint;
     }
 
     await task.save();
