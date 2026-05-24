@@ -59,6 +59,7 @@ app.use('/api/ai', require('./routes/ai'));
 app.use('/api/activity', require('./routes/activity'));
 app.use('/api/users', require('./routes/users')); 
 app.use('/api/sprints', require('./routes/sprints')); 
+app.use('/api/search', require('./routes/search')); 
 
 // Health Check Route
 app.get('/api/health', (req, res) => {
