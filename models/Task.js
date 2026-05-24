@@ -47,6 +47,10 @@ const TaskSchema = new mongoose.Schema({
     ref: 'Sprint',
     default: null 
   },
+  // 🔴 NEW: Real-Time Time Tracking
+  timeSpent: { type: Number, default: 0 }, // Total time tracked in seconds
+  timerStartedAt: { type: Date, default: null }, // Timestamp when play was pressed
+  isTimerRunning: { type: Boolean, default: false }, // Is the stopwatch active right now?
   
   createdAt: {
     type: Date,
