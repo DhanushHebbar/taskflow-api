@@ -58,6 +58,8 @@ const TaskSchema = new mongoose.Schema({
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     seconds: { type: Number, default: 0 }
   }],
+  // 🔴 NEW: Create a MongoDB Text Index for Lightning-Fast Search
+TaskSchema.index({ title: 'text', description: 'text' });
   
   createdAt: {
     type: Date,
