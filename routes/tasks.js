@@ -3,6 +3,7 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const Task = require('../models/Task');
 const Project = require('../models/Project');
+const Workspace = require('../models/Workspace'); // 🔴 NEW: For team roster
 const Notification = require('../models/Notification');
 const ActivityLog = require('../models/ActivityLog');
 const multer = require('multer');
@@ -29,6 +30,40 @@ const determinePriority = (text) => {
   return 'Medium';
 };
 
+// 🔴 NEW: Cognitive Workload Balancer Endpoint
+// Calculates current load (High=3, Med=2, Low=1) and returns sorted roster
+router.get('/workload/:projectId', auth, async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.projectId);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const workspace = await Workspace.findById(project.workspace).populate('members', 'name email avatar');
+    if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
+
+    const activeTasks = await Task.find({ project: req.params.projectId, status: { $ne: 'Completed' } });
+
+    const workload = workspace.members.map(member => {
+      const userTasks = activeTasks.filter(t => t.assignedTo?.toString() === member._id.toString());
+      let score = 0;
+      userTasks.forEach(t => {
+        if (t.priority === 'High') score += 3;
+        else if (t.priority === 'Medium') score += 2;
+        else score += 1;
+      });
+      return { user: member, taskCount: userTasks.length, loadScore: score };
+    });
+
+    // Sort by loadScore ascending (Lowest loaded user is at index 0)
+    workload.sort((a, b) => a.loadScore - b.loadScore);
+    
+    res.json(workload);
+  } catch (err) { 
+    console.error(err);
+    res.status(500).send('Server Error balancing workload'); 
+  }
+});
+
+// @route   POST /api/tasks
 router.post('/', auth, async (req, res) => {
   try {
     const { title, description, priority, projectId, assignedTo, dueDate, sprint } = req.body;
@@ -50,16 +85,18 @@ router.post('/', auth, async (req, res) => {
   } catch (err) { res.status(500).send('Server Error'); }
 });
 
+// @route   GET /api/tasks/:projectId
 router.get('/:projectId', auth, async (req, res) => {
   try {
-    // 🔴 FIXED: Use populate so the frontend knows the names of the people who worked on it
     const tasks = await Task.find({ project: req.params.projectId })
       .populate('timeLogs.user', 'name avatar')
+      .populate('assignedTo', 'name avatar') // 🔴 NEW: Fetch assignee details for frontend cards
       .sort({ createdAt: -1 });
     res.json(tasks);
   } catch (err) { res.status(500).send('Server Error'); }
 });
 
+// @route   PUT /api/tasks/:taskId
 router.put('/:taskId', auth, async (req, res) => {
   try {
     const { title, description, status, priority, assignedTo, dueDate, sprint } = req.body;
@@ -113,7 +150,6 @@ router.post('/:taskId/timer/start', auth, async (req, res) => {
 
     task.isTimerRunning = true;
     task.timerStartedAt = new Date();
-    // 🔴 NEW: Lock the timer to the user who clicked start
     task.timerStartedBy = req.user.id;
     await task.save();
 
@@ -134,7 +170,6 @@ router.post('/:taskId/timer/stop', auth, async (req, res) => {
 
     task.timeSpent += diffInSeconds;
     
-    // 🔴 NEW: Find the user in the ledger and add their seconds
     const logIndex = task.timeLogs.findIndex(log => log.user.toString() === task.timerStartedBy.toString());
     if (logIndex > -1) {
       task.timeLogs[logIndex].seconds += diffInSeconds;
