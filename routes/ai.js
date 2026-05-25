@@ -17,7 +17,8 @@ router.post('/enhance-task', auth, async (req, res) => {
     if (!title) return res.status(400).json({ message: 'Task title is required for AI enhancement' });
     if (!process.env.GEMINI_API_KEY) return res.status(500).json({ message: 'AI API key is not configured.' });
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }); // Standardized to 1.5-flash for speed/consistency
+    // 🔴 FIXED: Upgraded to Gemini 2.5 Flash
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' }); 
 
     const prompt = `
       You are an expert Agile Project Manager. A developer is creating a task with the title: "${title}".
@@ -51,7 +52,8 @@ router.get('/summarize-task/:taskId', auth, async (req, res) => {
     const task = await Task.findById(req.params.taskId).populate('comments.user', 'name');
     if (!task) return res.status(404).json({ message: 'Task not found' });
 
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    // 🔴 FIXED: Upgraded to Gemini 2.5 Flash
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     
     // Compile all task data and chat history for the AI
     const commentText = task.comments.map(c => `${c.user?.name}: ${c.text}`).join('\n');
@@ -85,7 +87,8 @@ router.get('/summarize-workspace/:workspaceId', auth, async (req, res) => {
     Data: ${projects.length} projects, ${totalTasks} total tasks, ${completedTasks} tasks completed. 
     Focus on overall progress, velocity, and what the team should prioritize next.`;
 
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    // 🔴 FIXED: Upgraded to Gemini 2.5 Flash
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const result = await model.generateContent(prompt);
     res.json({ summary: result.response.text() });
   } catch (err) {
