@@ -61,6 +61,7 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/sprints', require('./routes/sprints')); 
 app.use('/api/search', require('./routes/search')); 
 app.use('/api/chat', require('./routes/chat'));
+app.use('/api/notes', require('./routes/notes'));
 
 // Health Check Route
 app.get('/api/health', (req, res) => {
