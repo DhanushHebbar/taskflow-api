@@ -12,31 +12,31 @@ const aiProviders = [
     name: 'Groq',
     url: 'https://api.groq.com/openai/v1/chat/completions',
     key: process.env.GROQ_API_KEY,
-    model: 'llama3-8b-8192' // Blazing fast
+    model: 'llama-3.1-8b-instant' // Upgraded from decommissioned Llama 3 8B
   },
   {
     name: 'Cerebras',
     url: 'https://api.cerebras.ai/v1/chat/completions',
     key: process.env.CEREBRAS_API_KEY,
-    model: 'llama3.1-8b'
+    model: 'llama3.1-8b' // Key authentication requires attention in Render dashboard
   },
   {
     name: 'DeepInfra',
     url: 'https://api.deepinfra.com/v1/openai/chat/completions',
     key: process.env.DEEPINFRA_API_KEY,
-    model: 'meta-llama/Meta-Llama-3-8B-Instruct'
+    model: 'meta-llama/Meta-Llama-3.1-8B-Instruct' // Upgraded to 3.1
   },
   {
     name: 'SambaNova',
     url: 'https://api.sambanova.ai/v1/chat/completions',
     key: process.env.SAMBANOVA_API_KEY,
-    model: 'Meta-Llama-3-8B-Instruct' 
+    model: 'Meta-Llama-3.1-8B-Instruct' // Upgraded to valid 3.1 identifier
   },
   {
     name: 'OpenRouter',
     url: 'https://openrouter.ai/api/v1/chat/completions',
     key: process.env.OPENROUTER_API_KEY,
-    model: 'meta-llama/llama-3-8b-instruct:free' // Great reliable fallback
+    model: 'meta-llama/llama-3.1-8b-instruct:free' // Upgraded to live free endpoint
   }
 ];
 
