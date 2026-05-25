@@ -76,7 +76,7 @@ router.get('/:projectId', auth, async (req, res) => {
     const tasks = await Task.find({ project: req.params.projectId })
       .populate('timeLogs.user', 'name avatar')
       .populate('assignedTo', 'name avatar') 
-      .populate('comments.user', 'name avatar') // 🔴 NEW: Populate comment authors
+      .populate('comments.user', 'name avatar') // Populate comment authors
       .sort({ createdAt: -1 });
     res.json(tasks);
   } catch (err) { res.status(500).send('Server Error'); }
@@ -112,7 +112,7 @@ router.put('/:taskId', auth, async (req, res) => {
   } catch (err) { res.status(500).send('Server Error'); }
 });
 
-// 🔴 NEW: Task Comments & Mentions Engine
+// 🔴 FIX: Task Comments & Mentions Engine with strict await logic
 router.post('/:taskId/comments', auth, async (req, res) => {
   try {
     const { text } = req.body;
@@ -134,10 +134,13 @@ router.post('/:taskId/comments', auth, async (req, res) => {
     const mentions = text.match(/@([a-zA-Z0-9_]+)/g);
     if (mentions) {
        const workspace = await Workspace.findById(task.project.workspace).populate('members.user');
-       mentions.forEach(async (mention) => {
+       
+       // Fixed: Using for...of loop for properly awaited execution
+       for (const mention of mentions) {
          const namePart = mention.substring(1).toLowerCase(); // remove '@'
-         // Find the workspace member whose name contains the mentioned text
-         const mentionedMember = workspace.members.find(m => m.user.name.toLowerCase().includes(namePart));
+         
+         // Safe search with null-checking
+         const mentionedMember = workspace.members.find(m => m.user && m.user.name && m.user.name.toLowerCase().includes(namePart));
          
          if (mentionedMember && mentionedMember.user._id.toString() !== req.user.id) {
             const newNotification = new Notification({
@@ -146,9 +149,11 @@ router.post('/:taskId/comments', auth, async (req, res) => {
             });
             await newNotification.save();
             const io = req.app.get('io');
-            if (io) io.to(mentionedMember.user._id.toString()).emit('new_notification', newNotification);
+            if (io) {
+              io.to(mentionedMember.user._id.toString()).emit('new_notification', newNotification);
+            }
          }
-       });
+       }
     }
 
     const io = req.app.get('io');
