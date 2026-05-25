@@ -27,4 +27,17 @@ router.get('/:workspaceId', auth, async (req, res) => {
   }
 });
 
+// 🔴 NEW: Fetch Activity Timeline
+router.get('/:workspaceId', auth, async (req, res) => {
+  try {
+    const logs = await ActivityLog.find({ workspace: req.params.workspaceId })
+      .populate('user', 'name avatar')
+      .sort({ createdAt: -1 })
+      .limit(50); // Only grab the 50 most recent events
+    res.json(logs);
+  } catch (err) {
+    res.status(500).send('Server Error fetching activity');
+  }
+});
+
 module.exports = router;
