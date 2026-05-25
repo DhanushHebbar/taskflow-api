@@ -61,6 +61,13 @@ const TaskSchema = new mongoose.Schema({
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     seconds: { type: Number, default: 0 }
   }],
+
+  // 🔴 NEW: Task Comments Array
+  comments: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    text: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now }
+  }],
   
   createdAt: {
     type: Date,
