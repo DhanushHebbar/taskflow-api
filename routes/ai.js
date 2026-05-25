@@ -40,4 +40,29 @@ router.post('/enhance-task', auth, async (req, res) => {
   }
 });
 
+// 🔴 NEW: AI Task Summarization
+router.get('/summarize-task/:taskId', auth, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.taskId).populate('comments.user', 'name');
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    
+    // Compile all task data and chat history for the AI
+    const commentText = task.comments.map(c => `${c.user?.name}: ${c.text}`).join('\n');
+    const prompt = `You are a project management AI. Summarize the following task and its ongoing discussion into exactly 3 concise, actionable bullet points. 
+    Task Title: ${task.title}
+    Description: ${task.description || 'None'}
+    Team Discussion:
+    ${commentText || 'No discussion yet.'}`;
+
+    const result = await model.generateContent(prompt);
+    res.json({ summary: result.response.text() });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'AI Summarization failed.' });
+  }
+});
+
+module.exports = router;
 module.exports = router;
