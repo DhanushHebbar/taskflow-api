@@ -30,25 +30,17 @@ const determinePriority = (text) => {
   return 'Medium';
 };
 
-// 🔴 BUG FIX: Correctly populate the nested members.user field
 router.get('/workload/:projectId', auth, async (req, res) => {
   try {
     const project = await Project.findById(req.params.projectId);
     if (!project) return res.status(404).json({ message: 'Project not found' });
-
-    // The fix is here -> populate('members.user') instead of just 'members'
-    const workspace = await Workspace.findById(project.workspace)
-      .populate('members.user', 'name email avatar');
-      
+    const workspace = await Workspace.findById(project.workspace).populate('members.user', 'name email avatar');
     if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
-
     const activeTasks = await Task.find({ project: req.params.projectId, status: { $ne: 'Completed' } });
 
     const workload = workspace.members.map(memberObj => {
-      // Safely extract the populated user object
       const actualUser = memberObj.user;
       if (!actualUser) return null;
-
       const userTasks = activeTasks.filter(t => t.assignedTo?.toString() === actualUser._id.toString());
       let score = 0;
       userTasks.forEach(t => {
@@ -59,14 +51,9 @@ router.get('/workload/:projectId', auth, async (req, res) => {
       return { user: actualUser, taskCount: userTasks.length, loadScore: score };
     }).filter(item => item !== null);
 
-    // Sort by loadScore ascending (Lowest loaded user is at index 0)
     workload.sort((a, b) => a.loadScore - b.loadScore);
-    
     res.json(workload);
-  } catch (err) { 
-    console.error(err);
-    res.status(500).send('Server Error balancing workload'); 
-  }
+  } catch (err) { res.status(500).send('Server Error'); }
 });
 
 router.post('/', auth, async (req, res) => {
@@ -74,16 +61,10 @@ router.post('/', auth, async (req, res) => {
     const { title, description, priority, projectId, assignedTo, dueDate, sprint } = req.body;
     const project = await Project.findById(projectId);
     if (!project) return res.status(404).json({ message: 'Project not found' });
-
     let finalPriority = priority;
     if (priority === 'Auto') finalPriority = determinePriority(`${title} ${description}`);
 
-    const newTask = new Task({
-      title, description, priority: finalPriority, project: projectId, 
-      assignedTo: assignedTo || null, createdBy: req.user.id, attachments: [],
-      dueDate: dueDate || null, sprint: sprint || null 
-    });
-
+    const newTask = new Task({ title, description, priority: finalPriority, project: projectId, assignedTo: assignedTo || null, createdBy: req.user.id, attachments: [], dueDate: dueDate || null, sprint: sprint || null });
     const task = await newTask.save();
     await ActivityLog.create({ workspace: project.workspace, user: req.user.id, action: 'CREATE_TASK', details: `Created task "${title}"` });
     res.json(task);
@@ -95,6 +76,7 @@ router.get('/:projectId', auth, async (req, res) => {
     const tasks = await Task.find({ project: req.params.projectId })
       .populate('timeLogs.user', 'name avatar')
       .populate('assignedTo', 'name avatar') 
+      .populate('comments.user', 'name avatar') // 🔴 NEW: Populate comment authors
       .sort({ createdAt: -1 });
     res.json(tasks);
   } catch (err) { res.status(500).send('Server Error'); }
@@ -130,6 +112,52 @@ router.put('/:taskId', auth, async (req, res) => {
   } catch (err) { res.status(500).send('Server Error'); }
 });
 
+// 🔴 NEW: Task Comments & Mentions Engine
+router.post('/:taskId/comments', auth, async (req, res) => {
+  try {
+    const { text } = req.body;
+    let task = await Task.findById(req.params.taskId).populate('project');
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    // Save Comment
+    const newComment = { user: req.user.id, text };
+    task.comments.push(newComment);
+    await task.save();
+
+    // Populate the returned task so the UI updates instantly with names
+    task = await Task.findById(req.params.taskId)
+      .populate('comments.user', 'name avatar')
+      .populate('assignedTo', 'name')
+      .populate('timeLogs.user', 'name');
+
+    // MENTION ENGINE: Look for @Name in the text
+    const mentions = text.match(/@([a-zA-Z0-9_]+)/g);
+    if (mentions) {
+       const workspace = await Workspace.findById(task.project.workspace).populate('members.user');
+       mentions.forEach(async (mention) => {
+         const namePart = mention.substring(1).toLowerCase(); // remove '@'
+         // Find the workspace member whose name contains the mentioned text
+         const mentionedMember = workspace.members.find(m => m.user.name.toLowerCase().includes(namePart));
+         
+         if (mentionedMember && mentionedMember.user._id.toString() !== req.user.id) {
+            const newNotification = new Notification({
+              user: mentionedMember.user._id,
+              message: `💬 You were mentioned in a comment on task: "${task.title}"`
+            });
+            await newNotification.save();
+            const io = req.app.get('io');
+            if (io) io.to(mentionedMember.user._id.toString()).emit('new_notification', newNotification);
+         }
+       });
+    }
+
+    const io = req.app.get('io');
+    if (io) io.to(task.project._id.toString()).emit('task_changed');
+
+    res.json(task);
+  } catch (err) { res.status(500).send('Server Error'); }
+});
+
 router.post('/:taskId/upload', auth, upload.array('attachments', 10), async (req, res) => {
   try {
     let task = await Task.findById(req.params.taskId);
@@ -149,46 +177,36 @@ router.post('/:taskId/timer/start', auth, async (req, res) => {
   try {
     let task = await Task.findById(req.params.taskId);
     if (!task) return res.status(404).json({ message: 'Task not found' });
-    if (task.isTimerRunning) return res.status(400).json({ message: 'Timer is already running' });
-
     task.isTimerRunning = true;
     task.timerStartedAt = new Date();
     task.timerStartedBy = req.user.id;
     await task.save();
-
     const io = req.app.get('io');
     if (io) io.to(task.project.toString()).emit('task_changed');
     res.json(task);
-  } catch (err) { res.status(500).send('Server Error starting timer'); }
+  } catch (err) { res.status(500).send('Server Error'); }
 });
 
 router.post('/:taskId/timer/stop', auth, async (req, res) => {
   try {
     let task = await Task.findById(req.params.taskId);
     if (!task) return res.status(404).json({ message: 'Task not found' });
-    if (!task.isTimerRunning) return res.status(400).json({ message: 'Timer is not running' });
-
     const now = new Date();
     const diffInSeconds = Math.floor((now - task.timerStartedAt) / 1000);
-
     task.timeSpent += diffInSeconds;
     
     const logIndex = task.timeLogs.findIndex(log => log.user.toString() === task.timerStartedBy.toString());
-    if (logIndex > -1) {
-      task.timeLogs[logIndex].seconds += diffInSeconds;
-    } else {
-      task.timeLogs.push({ user: task.timerStartedBy, seconds: diffInSeconds });
-    }
+    if (logIndex > -1) task.timeLogs[logIndex].seconds += diffInSeconds;
+    else task.timeLogs.push({ user: task.timerStartedBy, seconds: diffInSeconds });
 
     task.isTimerRunning = false;
     task.timerStartedAt = null;
     task.timerStartedBy = null;
     await task.save();
-
     const io = req.app.get('io');
     if (io) io.to(task.project.toString()).emit('task_changed');
     res.json(task);
-  } catch (err) { res.status(500).send('Server Error stopping timer'); }
+  } catch (err) { res.status(500).send('Server Error'); }
 });
 
 module.exports = router;
