@@ -13,7 +13,15 @@ router.get('/stats', auth, admin, async (req, res) => {
   try {
     const userCount = await User.countDocuments();
     const workspaceCount = await Workspace.countDocuments();
-    res.json({ totalUsers: userCount, totalWorkspaces: workspaceCount });
+    
+    // 🔴 FIXED: Now querying the database for the total task count
+    const taskCount = await Task.countDocuments();
+    
+    res.json({ 
+      totalUsers: userCount, 
+      totalWorkspaces: workspaceCount,
+      totalTasks: taskCount // 🔴 FIXED: Sending it securely to the frontend
+    });
   } catch (err) { 
     res.status(500).send('Server Error'); 
   }
