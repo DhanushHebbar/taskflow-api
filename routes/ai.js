@@ -11,35 +11,35 @@ const aiProviders = [
     name: 'Groq',
     url: 'https://api.groq.com/openai/v1/chat/completions',
     key: process.env.GROQ_API_KEY,
-    model: 'llama-3.1-8b-instant' // Updated to active model
+    model: 'llama-3.1-8b-instant' 
   },
   {
     name: 'Cerebras',
     url: 'https://api.cerebras.ai/v1/chat/completions',
     key: process.env.CEREBRAS_API_KEY,
-    model: 'llama3.1-8b' // Check your API key in Render!
+    model: 'llama3.1-8b' 
   },
   {
     name: 'DeepInfra',
     url: 'https://api.deepinfra.com/v1/openai/chat/completions',
     key: process.env.DEEPINFRA_API_KEY,
-    model: 'meta-llama/Meta-Llama-3-8B-Instruct' // Add balance to your DeepInfra account
+    model: 'meta-llama/meta-llama-3.1-8b-instruct' 
   },
   {
     name: 'SambaNova',
     url: 'https://api.sambanova.ai/v1/chat/completions',
     key: process.env.SAMBANOVA_API_KEY,
-    model: 'Meta-Llama-3.1-8B-Instruct' // Updated to 3.1
+    model: 'Meta-Llama-3.1-8B-Instruct' 
   },
   {
     name: 'OpenRouter',
     url: 'https://openrouter.ai/api/v1/chat/completions',
     key: process.env.OPENROUTER_API_KEY,
-    model: 'meta-llama/llama-3.1-8b-instruct:free' // Updated to the new free endpoint
+    model: 'meta-llama/llama-3.1-8b-instruct:free' 
   }
 ];
 
-async function generateAIContent(prompt) {
+async function generateAIContent(prompt, expectJson = false) {
   const activeProviders = aiProviders.filter(p => p.key);
 
   if (activeProviders.length === 0) {
@@ -50,6 +50,18 @@ async function generateAIContent(prompt) {
     try {
       console.log(`🧠 Attempting AI generation via ${provider.name}...`);
       
+      const payload = {
+        model: provider.model,
+        messages: [{ role: "user", content: prompt }],
+        temperature: expectJson ? 0.2 : 0.7, // Lower temperature for stricter compliance
+        max_tokens: 800
+      };
+
+      // Force provider JSON structural configurations where natively supported
+      if (expectJson && (provider.name === 'Groq' || provider.name === 'OpenRouter' || provider.name === 'DeepInfra')) {
+        payload.response_format = { type: "json_object" };
+      }
+
       const response = await fetch(provider.url, {
         method: 'POST',
         headers: {
@@ -58,12 +70,7 @@ async function generateAIContent(prompt) {
           'HTTP-Referer': process.env.FRONTEND_URL || 'https://taskflow.com', 
           'X-Title': 'TaskFlow'
         },
-        body: JSON.stringify({
-          model: provider.model,
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.7,
-          max_tokens: 800
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
@@ -91,24 +98,34 @@ router.post('/enhance-task', auth, async (req, res) => {
 
     const prompt = `
       You are an expert Agile Project Manager. A developer is creating a task with the title: "${title}".
-      You must respond with ONLY a valid, minified JSON object on a SINGLE LINE. Do not use real line breaks.
+      You must respond with ONLY a valid JSON object. Do not include markdown code block syntax (like \`\`\`json).
       The JSON object must have exactly two keys:
       1. "description": A concise professional task description with a short bulleted list of Acceptance Criteria. (Use the explicit string "\\n" for formatting line breaks, do NOT use real newlines).
       2. "priority": Evaluate the urgency of the title and return exactly one of these strings: "High", "Medium", or "Low".
     `;
 
-    let responseText = await generateAIContent(prompt);
+    // Flag passed to lower response variations
+    let responseText = await generateAIContent(prompt, true);
     
+    // Extract JSON payload safely from response string
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("No JSON found in response");
+    if (!jsonMatch) throw new Error("No JSON object discovered within engine response text");
     let rawJson = jsonMatch[0];
 
     let data;
     try {
       data = JSON.parse(rawJson);
     } catch (parseError) {
-      console.warn("JSON parse failed due to control characters. Engaging fallback sanitizer...");
-      const sanitizedJson = rawJson.replace(/[\n\r\t]/g, ' ');
+      console.warn("JSON parse failed due to control characters. Engaging structural sanitizer regex loop...");
+      
+      // Replaces actual structural invalid control codes with safe alternative character formatting strings
+      const sanitizedJson = rawJson.replace(/[\u0000-\u001F\u007F-\u009F]/g, (match) => {
+        if (match === '\n') return '\\n';
+        if (match === '\r') return '\\r';
+        if (match === '\t') return '\\t';
+        return '';
+      });
+      
       data = JSON.parse(sanitizedJson);
     }
 
@@ -135,7 +152,7 @@ router.get('/summarize-task/:taskId', auth, async (req, res) => {
     Team Discussion:
     ${commentText || 'No discussion yet.'}`;
 
-    const summary = await generateAIContent(prompt);
+    const summary = await generateAIContent(prompt, false);
     res.json({ summary });
   } catch (err) {
     console.error('AI Orchestration Error:', err);
@@ -159,7 +176,7 @@ router.get('/summarize-workspace/:workspaceId', auth, async (req, res) => {
     Data: ${projects.length} projects, ${totalTasks} total tasks, ${completedTasks} tasks completed. 
     Focus on overall progress, velocity, and what the team should prioritize next. Ensure you only return the 3 bullet points, nothing else.`;
 
-    const summary = await generateAIContent(prompt);
+    const summary = await generateAIContent(prompt, false);
     res.json({ summary });
   } catch (err) {
     console.error('AI Orchestration Error:', err);
