@@ -6,41 +6,39 @@ const Project = require('../models/Project');
 const Workspace = require('../models/Workspace');
 
 // 🔴 THE AI ORCHESTRATOR ENGINE
-// Orders providers by speed/cost preference. The system tries top-to-bottom.
 const aiProviders = [
   {
     name: 'Groq',
     url: 'https://api.groq.com/openai/v1/chat/completions',
     key: process.env.GROQ_API_KEY,
-    model: 'llama-3.1-8b-instant' // Upgraded from decommissioned Llama 3 8B
+    model: 'llama3-8b-8192' 
   },
   {
     name: 'Cerebras',
     url: 'https://api.cerebras.ai/v1/chat/completions',
     key: process.env.CEREBRAS_API_KEY,
-    model: 'llama3.1-8b' // Key authentication requires attention in Render dashboard
+    model: 'llama3.1-8b'
   },
   {
     name: 'DeepInfra',
     url: 'https://api.deepinfra.com/v1/openai/chat/completions',
     key: process.env.DEEPINFRA_API_KEY,
-    model: 'meta-llama/Meta-Llama-3.1-8B-Instruct' // Upgraded to 3.1
+    model: 'meta-llama/Meta-Llama-3-8B-Instruct'
   },
   {
     name: 'SambaNova',
     url: 'https://api.sambanova.ai/v1/chat/completions',
     key: process.env.SAMBANOVA_API_KEY,
-    model: 'Meta-Llama-3.1-8B-Instruct' // Upgraded to valid 3.1 identifier
+    model: 'Meta-Llama-3-8B-Instruct' 
   },
   {
     name: 'OpenRouter',
     url: 'https://openrouter.ai/api/v1/chat/completions',
     key: process.env.OPENROUTER_API_KEY,
-    model: 'meta-llama/llama-3.1-8b-instruct:free' // Upgraded to live free endpoint
+    model: 'meta-llama/llama-3-8b-instruct:free' 
   }
 ];
 
-// Helper function to handle the waterfall failover
 async function generateAIContent(prompt) {
   const activeProviders = aiProviders.filter(p => p.key);
 
@@ -57,7 +55,6 @@ async function generateAIContent(prompt) {
         headers: {
           'Authorization': `Bearer ${provider.key}`,
           'Content-Type': 'application/json',
-          // OpenRouter specific header to identify your app
           'HTTP-Referer': process.env.FRONTEND_URL || 'https://taskflow.com', 
           'X-Title': 'TaskFlow'
         },
@@ -80,11 +77,9 @@ async function generateAIContent(prompt) {
 
     } catch (error) {
       console.warn(`⚠️ ${provider.name} failed (${error.message}). Failing over to next provider...`);
-      // Loop continues to the next provider automatically
     }
   }
 
-  // If the loop finishes and nothing succeeded:
   throw new Error('All configured AI providers failed to generate a response.');
 }
 
@@ -95,20 +90,32 @@ router.post('/enhance-task', auth, async (req, res) => {
     const { title } = req.body;
     if (!title) return res.status(400).json({ message: 'Task title is required.' });
 
+    // 🔴 FIXED: Stricter prompt for minified, single-line JSON
     const prompt = `
       You are an expert Agile Project Manager. A developer is creating a task with the title: "${title}".
-      You must respond with ONLY a valid JSON object. Do not include any markdown formatting, backticks, or conversational text.
+      You must respond with ONLY a valid, minified JSON object on a SINGLE LINE. Do not use real line breaks.
       The JSON object must have exactly two keys:
-      1. "description": A concise professional task description with a short bulleted list of Acceptance Criteria. (Use plain text dashes for bullets).
+      1. "description": A concise professional task description with a short bulleted list of Acceptance Criteria. (Use the explicit string "\\n" for formatting line breaks, do NOT use real newlines).
       2. "priority": Evaluate the urgency of the title and return exactly one of these strings: "High", "Medium", or "Low".
     `;
 
     let responseText = await generateAIContent(prompt);
     
-    // Safety check: Strip markdown if the AI accidentally adds it
-    responseText = responseText.replace(/^```json/i, '').replace(/```$/i, '').trim();
-    
-    const data = JSON.parse(responseText);
+    // Step 1: Extract JSON safely from any conversational noise
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No JSON found in response");
+    let rawJson = jsonMatch[0];
+
+    // Step 2: Bulletproof Parsing
+    let data;
+    try {
+      data = JSON.parse(rawJson);
+    } catch (parseError) {
+      console.warn("JSON parse failed due to control characters. Engaging fallback sanitizer...");
+      // Llama often spits out raw \n, \r, or \t. This aggressively strips them to salvage the object.
+      const sanitizedJson = rawJson.replace(/[\n\r\t]/g, ' ');
+      data = JSON.parse(sanitizedJson);
+    }
 
     res.json({ 
       enhancedDescription: data.description.trim(),
