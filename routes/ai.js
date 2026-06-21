@@ -5,37 +5,48 @@ const Task = require('../models/Task');
 const Project = require('../models/Project');
 const Workspace = require('../models/Workspace');
 
-// 🔴 THE AI ORCHESTRATOR ENGINE (MODELS UPDATED)
+// 🔴 THE AI ORCHESTRATOR ENGINE (UPGRADED TO 70B MODELS + GEMINI REST)
 const aiProviders = [
   {
     name: 'Groq',
     url: 'https://api.groq.com/openai/v1/chat/completions',
     key: process.env.GROQ_API_KEY,
-    model: 'llama-3.1-70b-versatile' 
-  },
-  {
-    name: 'Cerebras',
-    url: 'https://api.cerebras.ai/v1/chat/completions',
-    key: process.env.CEREBRAS_API_KEY,
-    model: 'llama3.1-8b' 
-  },
-  {
-    name: 'DeepInfra',
-    url: 'https://api.deepinfra.com/v1/openai/chat/completions',
-    key: process.env.DEEPINFRA_API_KEY,
-    model: 'meta-llama/meta-llama-3.1-8b-instruct' 
+    model: 'llama-3.3-70b-versatile', // 🔴 Massive 70B model for deep, rich text
+    type: 'openai'
   },
   {
     name: 'SambaNova',
     url: 'https://api.sambanova.ai/v1/chat/completions',
     key: process.env.SAMBANOVA_API_KEY,
-    model: 'Meta-Llama-3.1-8B-Instruct' 
+    model: 'Meta-Llama-3.1-70B-Instruct', // 🔴 Massive 70B model
+    type: 'openai'
+  },
+  {
+    name: 'Cerebras',
+    url: 'https://api.cerebras.ai/v1/chat/completions',
+    key: process.env.CEREBRAS_API_KEY,
+    model: 'llama3.1-70b', // 🔴 Massive 70B model
+    type: 'openai'
+  },
+  {
+    name: 'Gemini',
+    url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+    key: process.env.GEMINI_API_KEY,
+    type: 'gemini' // 🔴 Native REST integration (No SDK required!)
+  },
+  {
+    name: 'DeepInfra',
+    url: 'https://api.deepinfra.com/v1/openai/chat/completions',
+    key: process.env.DEEPINFRA_API_KEY,
+    model: 'meta-llama/Meta-Llama-3.1-70B-Instruct',
+    type: 'openai'
   },
   {
     name: 'OpenRouter',
     url: 'https://openrouter.ai/api/v1/chat/completions',
     key: process.env.OPENROUTER_API_KEY,
-    model: 'meta-llama/llama-3.1-8b-instruct:free' 
+    model: 'meta-llama/llama-3.1-8b-instruct:free', // 🔴 Ultimate Free Fallback
+    type: 'openai'
   }
 ];
 
@@ -49,38 +60,68 @@ async function generateAIContent(prompt, expectJson = false) {
   for (const provider of activeProviders) {
     try {
       console.log(`🧠 Attempting AI generation via ${provider.name}...`);
-      
-      const payload = {
-        model: provider.model,
-        messages: [{ role: "user", content: prompt }],
-        temperature: expectJson ? 0.2 : 0.7, // Lower temperature for stricter compliance
-        max_tokens: 800
-      };
+      let resultText;
 
-      // Force provider JSON structural configurations where natively supported
-      if (expectJson && (provider.name === 'Groq' || provider.name === 'OpenRouter' || provider.name === 'DeepInfra')) {
-        payload.response_format = { type: "json_object" };
+      if (provider.type === 'openai') {
+        const payload = {
+          model: provider.model,
+          messages: [{ role: "user", content: prompt }],
+          temperature: expectJson ? 0.2 : 0.7, 
+          max_tokens: 800
+        };
+
+        if (expectJson && (provider.name === 'Groq' || provider.name === 'OpenRouter' || provider.name === 'DeepInfra')) {
+          payload.response_format = { type: "json_object" };
+        }
+
+        const response = await fetch(provider.url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${provider.key}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': process.env.FRONTEND_URL || 'https://taskflow.com', 
+            'X-Title': 'TaskFlow'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const errorData = await response.text();
+          throw new Error(`HTTP ${response.status}: ${errorData}`);
+        }
+
+        const data = await response.json();
+        resultText = data.choices[0].message.content.trim();
+
+      } else if (provider.type === 'gemini') {
+        // Custom Google REST payload formatting
+        const fetchUrl = `${provider.url}?key=${provider.key}`;
+        const payload = {
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: expectJson ? 0.2 : 0.7,
+            maxOutputTokens: 800,
+            responseMimeType: expectJson ? "application/json" : "text/plain"
+          }
+        };
+
+        const response = await fetch(fetchUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const errorData = await response.text();
+          throw new Error(`HTTP ${response.status}: ${errorData}`);
+        }
+
+        const data = await response.json();
+        resultText = data.candidates[0].content.parts[0].text.trim();
       }
 
-      const response = await fetch(provider.url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${provider.key}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': process.env.FRONTEND_URL || 'https://taskflow.com', 
-          'X-Title': 'TaskFlow'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorData}`);
-      }
-
-      const data = await response.json();
       console.log(`✅ Success via ${provider.name}!`);
-      return data.choices[0].message.content.trim();
+      return resultText;
 
     } catch (error) {
       console.warn(`⚠️ ${provider.name} failed (${error.message}). Failing over to next provider...`);
@@ -96,18 +137,17 @@ router.post('/enhance-task', auth, async (req, res) => {
     const { title } = req.body;
     if (!title) return res.status(400).json({ message: 'Task title is required.' });
 
+    // 🔴 FIXED: Prompt specifically demands highly detailed, comprehensive writing
     const prompt = `
       You are an expert Agile Project Manager. A developer is creating a task with the title: "${title}".
       You must respond with ONLY a valid JSON object. Do not include markdown code block syntax (like \`\`\`json).
       The JSON object must have exactly two keys:
-      1. "description": A concise professional task description with a short bulleted list of Acceptance Criteria. (Use the explicit string "\\n" for formatting line breaks, do NOT use real newlines).
+      1. "description": A highly detailed, comprehensive professional task description (3-4 sentences) explaining the core goal and context, followed by a bulleted list of 3-4 Acceptance Criteria. (Use the explicit string "\\n" for formatting line breaks, do NOT use real newlines).
       2. "priority": Evaluate the urgency of the title and return exactly one of these strings: "High", "Medium", or "Low".
     `;
 
-    // Flag passed to lower response variations
     let responseText = await generateAIContent(prompt, true);
     
-    // Extract JSON payload safely from response string
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON object discovered within engine response text");
     let rawJson = jsonMatch[0];
@@ -118,7 +158,6 @@ router.post('/enhance-task', auth, async (req, res) => {
     } catch (parseError) {
       console.warn("JSON parse failed due to control characters. Engaging structural sanitizer regex loop...");
       
-      // Replaces actual structural invalid control codes with safe alternative character formatting strings
       const sanitizedJson = rawJson.replace(/[\u0000-\u001F\u007F-\u009F]/g, (match) => {
         if (match === '\n') return '\\n';
         if (match === '\r') return '\\r';
