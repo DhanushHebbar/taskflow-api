@@ -11,7 +11,7 @@ const aiProviders = [
     name: 'Groq',
     url: 'https://api.groq.com/openai/v1/chat/completions',
     key: process.env.GROQ_API_KEY,
-    model: 'llama-3.1-8b-instant' 
+    model: 'llama-3.1-70b-versatile' 
   },
   {
     name: 'Cerebras',
